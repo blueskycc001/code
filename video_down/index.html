@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频去水印下载</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div id="password-section" class="section">
+            <h1>视频去水印下载</h1>
+            <div class="password-container">
+                <input type="password" id="password-input" placeholder="请输入密码">
+                <button id="password-submit">验证</button>
+            </div>
+        </div>
+
+        <div id="main-section" class="section hidden">
+            <h1>视频去水印下载</h1>
+            <div class="input-container">
+                <textarea id="link-input" placeholder="请粘贴分享链接"></textarea>
+                <button id="parse-button">开始解析</button>
+            </div>
+
+            <div id="result-container" class="hidden">
+                <div class="result-header">
+                    <h2 id="video-title"></h2>
+                </div>
+                <div class="result-content">
+                    <div class="cover-container">
+                        <img id="cover-preview" src="" alt="封面预览">
+                        <button id="download-cover" class="download-button">下载封面</button>
+                    </div>
+                    <div class="video-container">
+                        <video id="video-preview" controls></video>
+                        <button id="download-video" class="download-button">下载视频</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

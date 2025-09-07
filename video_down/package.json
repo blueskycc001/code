@@ -1,0 +1,26 @@
+{
+  "name": "video_down",
+  "version": "1.0.0",
+  "description": "视频去水印下载网站",
+  "main": "index.html",
+  "scripts": {
+    "dev": "http-server -p 3000",
+    "start": "http-server -p 3000",
+    "proxy": "node proxy.js"
+  },
+  "keywords": [
+    "video",
+    "download",
+    "watermark"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

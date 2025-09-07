@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素风格贪吃蛇</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a2e;
+            font-family: 'Courier New', monospace;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .game-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 32px;
+            color: #ff6b6b;
+            text-shadow: 2px 2px 0px #333;
+            margin: 0;
+        }
+        
+        .score {
+            font-size: 24px;
+            color: #4ecdc4;
+            margin: 10px 0;
+        }
+        
+        .speed {
+            font-size: 18px;
+            color: #ffe66d;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #333;
+            background-color: #0f0f23;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+        
+        .controls {
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            border: 2px solid #ff6b6b;
+            text-align: center;
+            display: none;
+        }
+        
+        .touch-indicator {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 3px solid #4ecdc4;
+            border-radius: 50%;
+            background-color: rgba(78, 205, 196, 0.3);
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+        }
+        
+        .game-over h2 {
+            color: #ff6b6b;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+        
+        .restart-btn {
+            background-color: #4ecdc4;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: background-color 0.3s;
+        }
+        
+        .restart-btn:hover {
+            background-color: #45b7b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <h1>🐍 像素贪吃蛇 🍎</h1>
+            <div class="score">得分: <span id="score">0</span></div>
+            <div class="speed">速度: <span id="speed">1</span></div>
+        </div>
+        
+        <div style="position: relative;">
+            <canvas id="gameCanvas" width="400" height="400"></canvas>
+            <div class="touch-indicator" id="touchIndicator"></div>
+        </div>
+        
+        <div class="controls">
+            使用方向键或 WASD 控制蛇的移动<br>
+            按空格键暂停/继续<br>
+            移动端：在屏幕上滑动控制方向
+        </div>
+        
+        <div class="game-over" id="gameOver">
+            <h2>游戏结束!</h2>
+            <p>最终得分: <span id="finalScore">0</span></p>
+            <button class="restart-btn" onclick="restartGame()">重新开始</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 游戏配置
+        const GRID_SIZE = 20;
+        const GRID_WIDTH = canvas.width / GRID_SIZE;
+        const GRID_HEIGHT = canvas.height / GRID_SIZE;
+        
+        let snake = [{x: 10, y: 10}];
+        let direction = {x: 1, y: 0};
+        let apple = {x: 15, y: 15};
+        let score = 0;
+        let speed = 1;
+        let gameRunning = true;
+        let gameLoop;
+        let paused = false;
+        
+        // 音效相关的Web Audio API
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // 创建8位音效
+        function play8BitSound(frequency, duration, type = 'square') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+        
+        // 背景音乐
+        let backgroundMusic;
+        function startBackgroundMusic() {
+            if (backgroundMusic) return;
+            
+            backgroundMusic = setInterval(() => {
+                if (!paused && gameRunning) {
+                    const notes = [220, 277, 330, 277];
+                    const note = notes[Math.floor(Math.random() * notes.length)];
+                    play8BitSound(note, 0.1, 'triangle');
+                }
+            }, 500);
+        }
+        
+        function stopBackgroundMusic() {
+            if (backgroundMusic) {
+                clearInterval(backgroundMusic);
+                backgroundMusic = null;
+            }
+        }
+        
+        // 绘制像素风格的矩形
+        function drawPixelRect(x, y, color, size = 1) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE * size, GRID_SIZE * size);
+            
+            // 添加像素风格的边框
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE * size, GRID_SIZE * size);
+        }
+        
+        // 绘制苹果和特效
+        function drawApple() {
+            // 苹果主体
+            drawPixelRect(apple.x, apple.y, '#ff4444');
+            
+            // 苹果叶子
+            drawPixelRect(apple.x + 0.3, apple.y - 0.3, '#44ff44', 0.4);
+            
+            // 发光效果
+            ctx.shadowColor = '#ff4444';
+            ctx.shadowBlur = 10;
+            drawPixelRect(apple.x, apple.y, '#ff6666', 0.8);
+            ctx.shadowBlur = 0;
+        }
+        
+        // 绘制蛇
+        function drawSnake() {
+            snake.forEach((segment, index) => {
+                if (index === 0) {
+                    // 蛇头
+                    drawPixelRect(segment.x, segment.y, '#00ff00');
+                    
+                    // 眼睛
+                    drawPixelRect(segment.x + 0.2, segment.y + 0.2, '#000', 0.2);
+                    drawPixelRect(segment.x + 0.6, segment.y + 0.2, '#000', 0.2);
+                } else {
+                    // 蛇身
+                    const color = index % 2 === 0 ? '#00cc00' : '#009900';
+                    drawPixelRect(segment.x, segment.y, color);
+                }
+            });
+        }
+        
+        // 生成新的苹果位置
+        function generateApple() {
+            do {
+                apple.x = Math.floor(Math.random() * GRID_WIDTH);
+                apple.y = Math.floor(Math.random() * GRID_HEIGHT);
+            } while (snake.some(segment => segment.x === apple.x && segment.y === apple.y));
+        }
+        
+        // 吃苹果特效
+        function eatAppleEffect() {
+            // 爆炸粒子效果
+            const particles = [];
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: apple.x * GRID_SIZE + GRID_SIZE/2,
+                    y: apple.y * GRID_SIZE + GRID_SIZE/2,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 1.0
+                });
+            }
+            
+            function animateParticles() {
+                particles.forEach((particle, index) => {
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.life -= 0.05;
+                    
+                    if (particle.life <= 0) {
+                        particles.splice(index, 1);
+                        return;
+                    }
+                    
+                    ctx.fillStyle = `rgba(255, 68, 68, ${particle.life})`;
+                    ctx.fillRect(particle.x, particle.y, 4, 4);
+                });
+                
+                if (particles.length > 0) {
+                    requestAnimationFrame(animateParticles);
+                }
+            }
+            
+            animateParticles();
+        }
+        
+        // 更新游戏状态
+        function update() {
+            if (!gameRunning || paused) return;
+            
+            const head = {x: snake[0].x + direction.x, y: snake[0].y + direction.y};
+            
+            // 检查边界碰撞
+            if (head.x < 0 || head.x >= GRID_WIDTH || head.y < 0 || head.y >= GRID_HEIGHT) {
+                gameOver();
+                return;
+            }
+            
+            // 检查自身碰撞
+            if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+                gameOver();
+                return;
+            }
+            
+            snake.unshift(head);
+            
+            // 检查是否吃到苹果
+            if (head.x === apple.x && head.y === apple.y) {
+                score += 10;
+                speed += 0.2;
+                
+                // 播放音效
+                play8BitSound(440, 0.1); // 吃苹果音效
+                play8BitSound(880, 0.1); // 高分音效
+                
+                // 显示特效
+                eatAppleEffect();
+                
+                generateApple();
+                updateDisplay();
+            } else {
+                snake.pop();
+            }
+        }
+        
+        // 渲染游戏
+        function render() {
+            ctx.fillStyle = '#0f0f23';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            drawSnake();
+            drawApple();
+        }
+        
+        // 游戏主循环
+        function gameStep() {
+            update();
+            render();
+            
+            if (gameRunning) {
+                clearTimeout(gameLoop);
+                gameLoop = setTimeout(gameStep, Math.max(100, 200 - (speed * 20)));
+            }
+        }
+        
+        // 更新显示
+        function updateDisplay() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('speed').textContent = speed.toFixed(1);
+        }
+        
+        // 游戏结束
+        function gameOver() {
+            gameRunning = false;
+            clearTimeout(gameLoop);
+            stopBackgroundMusic();
+            
+            play8BitSound(150, 0.5, 'sawtooth'); // 失败音效
+            
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        // 重新开始游戏
+        function restartGame() {
+            snake = [{x: 10, y: 10}];
+            direction = {x: 1, y: 0};
+            generateApple();
+            score = 0;
+            speed = 1;
+            gameRunning = true;
+            paused = false;
+            
+            document.getElementById('gameOver').style.display = 'none';
+            updateDisplay();
+            startBackgroundMusic();
+            gameStep();
+        }
+        
+        // 键盘控制
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    if (direction.y === 0) {
+                        direction = {x: 0, y: -1};
+                        play8BitSound(200, 0.05);
+                    }
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    if (direction.y === 0) {
+                        direction = {x: 0, y: 1};
+                        play8BitSound(200, 0.05);
+                    }
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    if (direction.x === 0) {
+                        direction = {x: -1, y: 0};
+                        play8BitSound(200, 0.05);
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    if (direction.x === 0) {
+                        direction = {x: 1, y: 0};
+                        play8BitSound(200, 0.05);
+                    }
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    paused = !paused;
+                    if (paused) {
+                        stopBackgroundMusic();
+                    } else {
+                        startBackgroundMusic();
+                        gameStep();
+                    }
+                    break;
+            }
+        });
+        
+        // 移动端触摸控制
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        const touchIndicator = document.getElementById('touchIndicator');
+        
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!gameRunning) return;
+            
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchStartTime = Date.now();
+            
+            // 显示触摸指示器
+            const rect = canvas.getBoundingClientRect();
+            touchIndicator.style.left = (touch.clientX - rect.left - 30) + 'px';
+            touchIndicator.style.top = (touch.clientY - rect.top - 30) + 'px';
+            touchIndicator.style.display = 'block';
+        });
+        
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (!gameRunning) return;
+            
+            // 隐藏触摸指示器
+            touchIndicator.style.display = 'none';
+            
+            const touch = e.changedTouches[0];
+            const touchEndX = touch.clientX;
+            const touchEndY = touch.clientY;
+            const touchDuration = Date.now() - touchStartTime;
+            
+            // 计算滑动距离和方向
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            const minSwipeDistance = 30; // 最小滑动距离
+            
+            // 判断是点击还是滑动
+            if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && touchDuration < 200) {
+                // 点击事件 - 根据点击位置判断方向
+                const rect = canvas.getBoundingClientRect();
+                const canvasX = touchEndX - rect.left;
+                const canvasY = touchEndY - rect.top;
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                
+                // 判断点击区域
+                if (Math.abs(canvasX - centerX) > Math.abs(canvasY - centerY)) {
+                    // 水平方向
+                    if (canvasX > centerX && direction.x === 0) {
+                        direction = {x: 1, y: 0};
+                        play8BitSound(200, 0.05);
+                    } else if (canvasX < centerX && direction.x === 0) {
+                        direction = {x: -1, y: 0};
+                        play8BitSound(200, 0.05);
+                    }
+                } else {
+                    // 垂直方向
+                    if (canvasY > centerY && direction.y === 0) {
+                        direction = {x: 0, y: 1};
+                        play8BitSound(200, 0.05);
+                    } else if (canvasY < centerY && direction.y === 0) {
+                        direction = {x: 0, y: -1};
+                        play8BitSound(200, 0.05);
+                    }
+                }
+            } else {
+                // 滑动事件
+                if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
+                    // 水平滑动
+                    if (deltaX > 0 && direction.x === 0) {
+                        // 向右滑动
+                        direction = {x: 1, y: 0};
+                        play8BitSound(200, 0.05);
+                    } else if (deltaX < 0 && direction.x === 0) {
+                        // 向左滑动
+                        direction = {x: -1, y: 0};
+                        play8BitSound(200, 0.05);
+                    }
+                } else if (Math.abs(deltaY) > minSwipeDistance) {
+                    // 垂直滑动
+                    if (deltaY > 0 && direction.y === 0) {
+                        // 向下滑动
+                        direction = {x: 0, y: 1};
+                        play8BitSound(200, 0.05);
+                    } else if (deltaY < 0 && direction.y === 0) {
+                        // 向上滑动
+                        direction = {x: 0, y: -1};
+                        play8BitSound(200, 0.05);
+                    }
+                }
+            }
+        });
+        
+        // 防止页面滚动
+        document.addEventListener('touchmove', (e) => {
+            if (e.target === canvas) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        // 初始化游戏
+        generateApple();
+        updateDisplay();
+        startBackgroundMusic();
+        gameStep();
+    </script>
+</body>
+</html>
